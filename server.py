@@ -149,8 +149,6 @@ async def run(pc, player, signaling, role):
                 print(f"Received Coords (x,y): {x,y}, original: {class_obj.x,class_obj.y}, Error: {error}") 
                 print("-------------------------------------------------")
 
-        # ************ WORKING*********************
-
         await pc.setLocalDescription(await pc.createOffer())
         await signaling.send(pc.localDescription)
 

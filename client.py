@@ -6,159 +6,120 @@ This is client this will first receive video feed from server detect centroid of
 import numpy as np
 import cv2
 import asyncio
-# import json
-from av import VideoFrame
 from multiprocessing import Process, Queue, Value
-from aiortc.contrib.signaling import BYE, TcpSocketSignaling, create_signaling, add_signaling_arguments
-from aiortc.contrib.media import MediaBlackhole, MediaRelay, MediaPlayer, MediaRecorder
+from aiortc.contrib.signaling import BYE, TcpSocketSignaling
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
-from skimage import io
 import matplotlib.pyplot as plt
 from collections import deque
 import time
-from myUtils import FrameVideoStream
-from threading import Thread
-# from queue import Queue
 
-plt.ion()
 
-def channel_log(channel, t, message):
-    print("channel(%s) %s %s" % (channel.label, t, message))
-
-# player = MediaRelay()
-
-def channel_send(channel, message):
-    # channel_log(channel, ">", message)
-    channel.send(message)
 
 class VideoTransformTrack(MediaStreamTrack):
     """
-    A video stream track that transforms frames from an another track.
+    A video stream track that takes images from the webcam and gets the center of the green ball on the screen.
     """
 
     kind = "video"
 
     def __init__(self, track):
-        super().__init__()  # don't forget this!
-        self.track = track
+
+        super().__init__()  
+        self.track = track  
         self.r=0
-        # frame = await self.track.recv()
-        # self.fvs=FrameVideoStream(queueSize=100).start()
-        self.My_Q = Queue(maxsize=50)
-        self.image =0
-        self.greenLower = np.array([29, 86, 6])
+        self.My_Q = Queue(maxsize=50) # Declare the Shared Memory Queue
+
+        # Declare the upper and lower threshold for green colour
+        self.greenLower = np.array([29, 86, 6]) 
         self.greenUpper = np.array([64, 255, 255])
+
+        # Declare the shared memory to store x and y coordinates of the ball.
         self.x =Value('i',-1)
         self.y =Value('i',-1)
-        
-        # self.coords= Value
 
+        # Declare the child process that parses an image and determines the center of the green ball.
         p1=Process(target=self.Parse_image,args=())
         p1.daemon=True
         p1.start()
 
     async def recv(self):
         try:            
-            frame = await self.track.recv()
-            # print(frame)
+            frame = await self.track.recv() 
+            
             img = frame.to_ndarray(format="bgr24")
-            # self.image = img
-            # self.fvs.get_frame(img)
-            
-            # cv2.circle(frame,center, radius=int(radius), color =(255,0,0), thickness=2 )
-            # cv2.circle(frame,center, radius=1, color =(0,0,255), thickness=-1 )
-            
-            cv2.imshow("Client Side Window", img)
-            cv2.waitKey(1)
+
+            '''
+            Show received images on the client side (comment it if "Fatal IO error 0 (Success) on X server :1" erro is encounterd)
+            '''
+            # cv2.imshow("Client Side Window", img)
+            # cv2.waitKey(1)
 
             if not self.My_Q.full():
-                self.My_Q.put(img)
+                self.My_Q.put(img) # put the received image into the shared Process Queue
             # print("CENTER: ", self.x.value, self.y.value)
         except KeyboardInterrupt:
-            print("interr from recv")
-            # self.fvs.stop()
+            pass
+            # print("interr from recv")
         return frame
     
     def Parse_image(self):
         """
-        Function to display Client side window  and also get the centroid of the ball
+        Function to display Client side parsed window, get the centroid of the ball and draw the center of the ball. This
+        is the Child process forked by the parent client.py process
         """
-        print("MY PROC")
+        # print("Parse image function")
         try:
             while True:
-                # print(" Processing Image ", self.My_Q.qsize())
                 if self.My_Q.qsize() > 0:
-                    # print("No Ball Detected ", end="\r")
                     
-                    frame = self.My_Q.get()
+                    frame = self.My_Q.get() # Get the frame from the Queue
                     
-                    blurred = cv2.GaussianBlur(frame, (21, 21), 0)
-                    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+                    blurred = cv2.GaussianBlur(frame, (21, 21), 0) # Blurr the image
+                    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV) # convert to HSV
+ 
+                    mask = cv2.inRange(hsv, self.greenLower, self.greenUpper) # Build a mask using green colour threshold
+                    mask = cv2.erode(mask, None, iterations=2) # Erode to remove noise
+                    mask = cv2.dilate(mask, None, iterations=2) # Dilate further to expose large contours even further
 
-                    mask = cv2.inRange(hsv, self.greenLower, self.greenUpper)
-                    mask = cv2.erode(mask, None, iterations=2)
-                    mask = cv2.dilate(mask, None, iterations=2)
-
-                    # print(type(mask), mask.shape,frame.shape, blurred.shape, hsv.shape)
                     center = None
-                    cnts,high  = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+                    cnts,high  = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE) # Find the contours
                     
-                    if(len(cnts)>0 ):
+                    if(len(cnts)>0 ): # Check to see if there are contours in the image
                             
-                        c= max(cnts,key=cv2.contourArea)
-                        ((x, y), radius) = cv2.minEnclosingCircle(c)
+                        c= max(cnts,key=cv2.contourArea) # Get the largest contour 
+                        ((x, y), radius) = cv2.minEnclosingCircle(c) # get a circle radius that can enclose the largest contour
                         
-                        M = cv2.moments(c)
-                        center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+                        M = cv2.moments(c) # Find the Moment of the largest contour
+                        center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"])) # Find the center of the largest contour 
                         
-                        if radius >20:    
-                            # cv2.drawContours(frame, cnts, -1, (0,255,75), 2)
+                        if radius >20: # Update the x,y value of the ball's center if circle radius is > 20
                             # print ("get Center Proc",center )
                             self.x.value=center[0]
                             self.y.value=center[1]
-                            cv2.circle(frame,center, radius=int(radius), color =(255,0,0), thickness=2 )
+                            # Draw circle and center point on the image
+                            cv2.circle(frame,center, radius=int(radius), color =(255,0,0), thickness=2 ) 
                             cv2.circle(frame,center, radius=1, color =(0,0,255), thickness=-1 )
-                        else:
+                        else: # Else assign -1 to both x and y positions
                             self.x.value=-1
                             self.y.value=-1
-                    else:
+                    else: # Else there are no contours/Ball in the image hence assign -1 to both x and y positions
                         self.x.value=-1
                         self.y.value=-1
-
-                    cv2.putText(frame, "Queue Size: {}".format(self.My_Q.qsize()),(10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    cv2.imshow("Parsed Image Window",frame)
-                    cv2.waitKey(1)
                 
+                    #Display the parsed image on the client side
+                    cv2.putText(frame, "Queue Size: {}".format(self.My_Q.qsize()),(10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    cv2.imshow("Parsed Image Window (Client)",frame)
+                    cv2.waitKey(1)
+                # else: # Else there are no contours/Ball in the image hence assign -1 to both x and y positions
+                #         self.x.value=-1
+                #         self.y.value=-1
         except KeyboardInterrupt:
-            print(" keyboard interr returning")
+            # print(" keyboard interr returning")
             return
 
-time_start = None
 
-
-def current_stamp():
-    global time_start
-
-    if time_start is None:
-        time_start = time.time()
-        return 0
-    else:
-        return int((time.time() - time_start) * 1000000)
-
-async def run(pc, player, recorder, signaling, role, fp):
+async def run(pc, signaling, role):
     
-    # def add_tracks():
-    #     if player and player.audio:
-    #         pc.addTrack(player.audio)
-
-    #     if player and player.video:
-    #         print("Client add_Track vid")
-    #         pc.addTrack(  player.video )
-    #     else:
-            # print("Client add_Track vid-FLAG")
-            # pc.addTrack(VideoTransformTrack(track))
-            # pc.addTrack(FlagVideoStreamTrack())
-
     # connect signaling
     await signaling.connect()
 
@@ -167,20 +128,18 @@ async def run(pc, player, recorder, signaling, role, fp):
         print("Receiving %s" % track.kind)
         
         if track.kind == "video":
-            stream_obj=VideoTransformTrack(track)
+            stream_obj=VideoTransformTrack(track) # Declare a VideoTransformTrack Class object
             pc.addTrack(stream_obj)
         
-        # ************ WORKING*********************
+        # SEND x, y coordinate back to Server
         @pc.on('datachannel')
         def on_datachannel(channel):
             @channel.on('message')
             def on_message(message):
                 data_send = str(stream_obj.x.value)+","+str(stream_obj.y.value)
-                # print(data_send)
+                arr = bytes(data_send, 'utf-8')
+                print(arr)
                 channel.send(data_send)
-        # ************ WORKING*********************
-       
-        
     
     # consume signaling
     while True:
@@ -188,52 +147,30 @@ async def run(pc, player, recorder, signaling, role, fp):
 
         if isinstance(obj, RTCSessionDescription):
             await pc.setRemoteDescription(obj)
-            # await recorder.start()
-            # await pc.start()
-            
-            print("inside True")
             if obj.type == "offer":
-                print("Client send Answer")
                 await pc.setLocalDescription(await pc.createAnswer())
                 await signaling.send(pc.localDescription)
-            # elif isinstance(obj, RTCIceCandidate):
-            #     await pc.addIceCandidate(obj)
         elif obj is BYE:
             print("Exiting")
             break
 
-# print("HI")
-
-
 if __name__=="__main__":
-    print(__name__,"CLIENT HI")
+    print("Client Startup")
 
     host="192.168.1.118"
     port="20"
 
-    signaling = TcpSocketSignaling(host,port)
-    pc=RTCPeerConnection()
-    
-    fp = open("/home/shiladitya/Downloads/my_file_send.txt", "wb")
-
-    # options={"framerate":"30", "video_size": "640x480"}
-    # player = MediaPlayer("/dev/video3",format="v4l2", options=options)
-    player = None
-    # video=relay.subscribe(player.video)
-
-    recorder = MediaRecorder("/home/shiladitya/Downloads/sample_recorded_NEW.mp4")
+    signaling = TcpSocketSignaling(host,port) # Create TCP socket signalling object
+    pc=RTCPeerConnection() # Create a RTCPeerConnection object
 
     loop = asyncio.get_event_loop()
 
     try:
         loop.run_until_complete(
-            run(pc=pc, player=player ,recorder=recorder, signaling=signaling, role="answer", fp=fp)
+            run(pc=pc, signaling=signaling, role="answer")
         )
     except KeyboardInterrupt:
         pass
     finally:
-        print("cleanup")
-        # loop.run_until_complete(recorder.stop())
         loop.run_until_complete(signaling.close())
         loop.run_until_complete(pc.close())
-

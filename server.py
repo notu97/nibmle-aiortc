@@ -17,21 +17,18 @@ import matplotlib.pyplot as plt
 from myUtils import FrameVideoStream
 import time
 import math
-# def server_display():
-#     while True:
 
-def channel_log(channel, t, message):
+def channel_log(channel, t, message): # Helper function to display data channel logs
     print("channel(%s) %s %s" % (channel.label, t, message))
 
-def channel_send(channel, message):
+def channel_send(channel, message): 
     # channel_log(channel, ">", message)
     channel.send(message)       
 
-#############################
 counter =0
-class MY_Class(MediaStreamTrack):
+class Webcam_Class(MediaStreamTrack):
     """
-    A video stream track that transforms frames from an another track.
+    A video stream track that takes images from the webcam (at /dev/video0) and gets the center of the green ball on the screen.
     """
 
     kind = "video"
@@ -39,71 +36,61 @@ class MY_Class(MediaStreamTrack):
     def __init__(self, track):
         super().__init__()  # don't forget this!
         self.track = track
-        self.vid = MediaRelay().subscribe(self.track)
-        # self.r=0
-        # frame = await self.track.recv()
-        # self.fvs=FrameVideoStream(queueSize=100).start()
-        # self.My_Q = Queue(maxsize=100)
-        # self.player = player
+        self.vid = MediaRelay().subscribe(self.track) # Subscribe to the local Media player (Here it is the webcam at "/dev/video0")
 
+        # Declare the upper and lower threshold for green colour
         self.greenLower = np.array([29, 86, 6])
         self.greenUpper = np.array([64, 255, 255])
+
+        # Set initial position of the ball
         self.x =-1
         self.y =-1
         
-        # self.coords= Value
-
-        # p1=Process(target=self.func,args=())
-        # p1.daemon=True
-        # p1.start()
     
     async def recv(self):
-        global counter
-        frame = await self.vid.recv()
-        # print("###############",counter)
-        # counter=counter+1
-        img = frame.to_ndarray(format="bgr24")
-        # print("***************",counter)
-        # counter=counter+1
-        # self.Parse_image(img)
+        frame = await self.vid.recv() # get frames from Webcam 
+        img = frame.to_ndarray(format="bgr24") # Convert it into BGR format
 
+        # Display Server Side Frames
         cv2.imshow("Server side window",img)
         cv2.waitKey(1)
 
-        #######################
-
         my_frame = img
         
-        blurred = cv2.GaussianBlur(my_frame, (21, 21), 0)
-        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+        # Parse the image to get center of the ball
+        blurred = cv2.GaussianBlur(my_frame, (21, 21), 0) # Blurr the image
+        hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV) # convert to HSV
 
-        mask = cv2.inRange(hsv, self.greenLower, self.greenUpper)
-        mask = cv2.erode(mask, None, iterations=2)
-        mask = cv2.dilate(mask, None, iterations=2)
+        mask = cv2.inRange(hsv, self.greenLower, self.greenUpper) # Build a mask using green colour threshold
+        mask = cv2.erode(mask, None, iterations=2) # Erode to remove noise
+        mask = cv2.dilate(mask, None, iterations=2) # Dilate further to expose large contours even further
 
-        # # print(type(mask), mask.shape,frame.shape, blurred.shape, hsv.shape)
         center = None
-        cnts,high  = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-        
-        if(len(cnts)>0 ):
+        cnts,high  = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE) # Find the contours
+                    
+        if(len(cnts)>0 ): # Check to see if there are contours in the image
                 
-            c= max(cnts,key=cv2.contourArea)
-            ((x_e, y_e), radius) = cv2.minEnclosingCircle(c)
+            c= max(cnts,key=cv2.contourArea) # Get the largest contour 
+            ((x, y), radius) = cv2.minEnclosingCircle(c) # get a circle radius that can enclose the largest contour
             
-            M = cv2.moments(c)
-            center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+            M = cv2.moments(c) # Find the Moment of the largest contour
+            center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"])) # Find the center of the largest contour 
             
-            if radius >20:    
-                # cv2.drawContours(frame, cnts, -1, (0,255,75), 2)
+            if radius >20: # Update the x,y value of the ball's center if circle radius is > 20
                 # print ("get Center Proc",center )
                 self.x=center[0]
                 self.y=center[1]
-                cv2.circle(my_frame,center, radius=int(radius), color =(255,0,0), thickness=2 )
+                # Draw circle and center point on the image
+                cv2.circle(my_frame,center, radius=int(radius), color =(255,0,0), thickness=2 ) 
                 cv2.circle(my_frame,center, radius=1, color =(0,0,255), thickness=-1 )
-        else:
+            else: # Else assign -1 to both x and y positions
+                self.x=-1
+                self.y=-1
+        else: # Else there are no contours/Ball in the image hence assign -1 to both x and y positions
             self.x=-1
             self.y=-1
 
+        #Display the parsed image on the Server side
         cv2.imshow("Parsed Image Window (Server)",my_frame)
         cv2.waitKey(1)
         return frame
@@ -122,18 +109,10 @@ def current_stamp():
 
 
 async def run(pc, player, signaling, role):
-    class_obj = MY_Class(player.video)
+    class_obj = Webcam_Class(player.video) # Declare webcam class object
     def add_tracks():
-        if player and player.audio:
-            pc.addTrack(player.audio)
-
-        if player and player.video:
-            # print("hi")
-            print("Server add_Track vid")
-            pc.addTrack(class_obj)
-        else:
-            print("Server add_Track vid-FLAG")
-            pc.addTrack(FlagVideoStreamTrack())
+        # Add Webcam Object to aiortc addTrack function
+        pc.addTrack(class_obj)
 
     # connect signaling
     await signaling.connect()
@@ -162,7 +141,6 @@ async def run(pc, player, signaling, role):
             # Receive and split the message to get x and y
             x = int(message.split(",")[0]) 
             y = int(message.split(",")[1])
-            # print(message.decode('utf-8'))
             if x<0 or y<0 :
                 print("No ball in frame")
             else:        

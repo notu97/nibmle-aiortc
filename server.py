@@ -225,6 +225,5 @@ if __name__=="__main__":
         pass
     finally:
         # cleanup
-        # loop.run_until_complete(recorder.stop())
         loop.run_until_complete(signaling.close())
         loop.run_until_complete(pc.close())

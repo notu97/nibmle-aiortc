@@ -70,7 +70,7 @@ class VideoTransformTrack(MediaStreamTrack):
         # print("Parse image function")
         try:
             while True:
-                if self.My_Q.qsize() > 0:
+                if self.My_Q.qsize() > 10:
                     
                     frame = self.My_Q.get() # Get the frame from the Queue
                     
@@ -110,9 +110,7 @@ class VideoTransformTrack(MediaStreamTrack):
                     cv2.putText(frame, "Queue Size: {}".format(self.My_Q.qsize()),(10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                     cv2.imshow("Parsed Image Window (Client)",frame)
                     cv2.waitKey(1)
-                # else: # Else there are no contours/Ball in the image hence assign -1 to both x and y positions
-                #         self.x.value=-1
-                #         self.y.value=-1
+                    
         except KeyboardInterrupt:
             # print(" keyboard interr returning")
             return

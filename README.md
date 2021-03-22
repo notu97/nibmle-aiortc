@@ -5,11 +5,12 @@ The server.py contains the server code that subscribes to the Webcam in the serv
 ### Instruction
 1. Clone the repository:
 ```sh
-git clone https://github.com/notu97/nibmle-aiortc.git nimble_WS
+git clone https://github.com/notu97/nibmle-aiortc.git nimble_WS 
 ```
-Use the Dockerfile to create a docker image (here ubuntu_image). 
+Or, put the contents of the shared (i.e. sent by e-mail) folder into the ``` nimble_WS``` folder and cd into ```nimble_WS```. Use the Dockerfile to create a docker image (here ubuntu_image). 
 
 ``` sh
+cd /path/to/nimble_WS
 sudo docker build - < Dockerfile -t ubuntu_image
 ```
 

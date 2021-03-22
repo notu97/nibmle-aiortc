@@ -10,22 +10,28 @@ import asyncio
 # import json
 from multiprocessing import Process, Queue, Value
 from aiortc.contrib.signaling import BYE, TcpSocketSignaling, create_signaling, add_signaling_arguments
-from aiortc.contrib.media import MediaBlackhole, MediaRelay, MediaPlayer, MediaRecorder
+from aiortc.contrib.media import RelayStreamTrack, MediaRelay, MediaPlayer, MediaRecorder, PlayerStreamTrack
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+
 from threading import Thread
 import matplotlib.pyplot as plt
 from myUtils import FrameVideoStream
 import time
 import math
 
+
 def channel_log(channel, t, message): # Helper function to display data channel logs
     print("channel(%s) %s %s" % (channel.label, t, message))
 
 def channel_send(channel, message): 
-    # channel_log(channel, ">", message)
+    '''
+    Function to send PINGS to the Client
+    '''
+    # print(type(channel))
+    assert isinstance(message, str)
+
     channel.send(message)       
 
-counter =0
 class Webcam_Class(MediaStreamTrack):
     """
     A video stream track that takes images from the webcam (at /dev/video0) and gets the center of the green ball on the screen.
@@ -35,8 +41,12 @@ class Webcam_Class(MediaStreamTrack):
 
     def __init__(self, track):
         super().__init__()  # don't forget this!
+        assert isinstance(track, PlayerStreamTrack)
+        
         self.track = track
         self.vid = MediaRelay().subscribe(self.track) # Subscribe to the local Media player (Here it is the webcam at "/dev/video0")
+        
+        assert isinstance(self.vid, RelayStreamTrack)
 
         # Declare the upper and lower threshold for green colour
         self.greenLower = np.array([29, 86, 6])
@@ -109,6 +119,16 @@ def current_stamp():
 
 
 async def run(pc, player, signaling, role):
+    '''
+    This function sends an offer to the Client side using the signaling type 
+    declared in the main function. Here role="Offer"
+    '''
+
+    assert isinstance(pc, RTCPeerConnection)
+    assert isinstance(signaling,TcpSocketSignaling)
+    assert isinstance(player, MediaPlayer)
+    assert role == "offer"
+
     class_obj = Webcam_Class(player.video) # Declare webcam class object
     def add_tracks():
         # Add Webcam Object to aiortc addTrack function

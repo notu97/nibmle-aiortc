@@ -30,6 +30,9 @@ sudo docker run -it  --env QT_X11_NO_MITSHM=1   -e DISPLAY=$DISPLAY   -v $XAUTH:
 ```
 3. Once inside each container go to the root directory by running "cd" and in a 3rd termnal run ```xhost +``` command (thie terminal isn't needed anymore you may close it).
 
-4. On the server container run ```ifconfig``` command. Get the ip address of the server container. Change the host address of both server.py and client.py to this new ip address obtained
+4. On the server container run ```ifconfig``` command. Get the ip address of the server container. Change the host address of both server.py and client.py scripts to this new ip address obtained.
 
 5. Run ```python3 server.py``` on the server container, then run ```python3 client.py``` on the client container. The server container terminal shows the original ball location and the received ball location from the client side.
+
+### Pytest
+The ```test_client.py``` and ```test_server.py``` scripts are given to test the codes using pytest i.e. ```python3 -m pytest``` command.
